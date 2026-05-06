@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useEffect, useState } from "react"
+import { useRef, useEffect, useState, useCallback } from "react"
 import { 
   ChevronRight, 
   Info, 
@@ -121,6 +121,17 @@ function SlackIcon() {
 export function SignalCard({ signal, isExpanded, onToggleExpand, rankChange = 0, onReject }: SignalCardProps) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [vote, setVote] = useState<"up" | "down" | null>(null)
+  const [scoreFlash, setScoreFlash] = useState(false)
+  const prevScore = useRef(signal.scoreBreakdown.score)
+
+  useEffect(() => {
+    if (signal.scoreBreakdown.score !== prevScore.current) {
+      prevScore.current = signal.scoreBreakdown.score
+      setScoreFlash(true)
+      const t = setTimeout(() => setScoreFlash(false), 1200)
+      return () => clearTimeout(t)
+    }
+  }, [signal.scoreBreakdown.score])
 
   useEffect(() => {
     if (isExpanded && cardRef.current) {
@@ -185,7 +196,19 @@ export function SignalCard({ signal, isExpanded, onToggleExpand, rankChange = 0,
             </span>
           </div>
         </div>
-        <TrendIndicator trend={signal.trend} />
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "font-mono text-xs px-1.5 py-0.5 rounded transition-all duration-300",
+              scoreFlash
+                ? "bg-[#F38020] text-white scale-110"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            {signal.scoreBreakdown.score.toFixed(1)}
+          </span>
+          <TrendIndicator trend={signal.trend} />
+        </div>
       </div>
 
       {/* Card Body */}

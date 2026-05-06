@@ -5,86 +5,10 @@ import { Play, Download, Copy, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 
-const defaultQuery = `SELECT * FROM enrichment 
-WHERE sentiment_score < -0.5 
-ORDER BY urgency_score DESC 
+const defaultQuery = `SELECT * FROM enrichment
+WHERE sentiment_score < -0.5
+ORDER BY urgency_score DESC
 LIMIT 50;`
-
-// Mock query results
-const mockResults = [
-  {
-    id: "fb_001",
-    source: "discord",
-    user_tier: "enterprise",
-    summary: "Workers AI response times inconsistent during peak hours",
-    sentiment_score: -0.72,
-    urgency_score: 8.5,
-    created_at: "2024-01-15T09:23:00Z",
-  },
-  {
-    id: "fb_002",
-    source: "support",
-    user_tier: "enterprise",
-    summary: "Inference queue depth causing 5s+ delays on batch requests",
-    sentiment_score: -0.85,
-    urgency_score: 9.2,
-    created_at: "2024-01-15T08:45:00Z",
-  },
-  {
-    id: "fb_003",
-    source: "github",
-    user_tier: "pro",
-    summary: "Timeout errors when processing images larger than 2MB",
-    sentiment_score: -0.68,
-    urgency_score: 7.8,
-    created_at: "2024-01-14T22:15:00Z",
-  },
-  {
-    id: "fb_004",
-    source: "twitter",
-    user_tier: "free",
-    summary: "Model availability seems to drop during US business hours",
-    sentiment_score: -0.55,
-    urgency_score: 6.2,
-    created_at: "2024-01-14T18:30:00Z",
-  },
-  {
-    id: "fb_005",
-    source: "forum",
-    user_tier: "pro",
-    summary: "Llama 2 70B frequently returns 503 errors",
-    sentiment_score: -0.78,
-    urgency_score: 8.1,
-    created_at: "2024-01-14T15:20:00Z",
-  },
-  {
-    id: "fb_006",
-    source: "support",
-    user_tier: "enterprise",
-    summary: "Need SLA guarantees for inference latency, currently too variable",
-    sentiment_score: -0.62,
-    urgency_score: 7.5,
-    created_at: "2024-01-14T11:00:00Z",
-  },
-  {
-    id: "fb_007",
-    source: "discord",
-    user_tier: "pro",
-    summary: "Cold start latency is killing our real-time use case",
-    sentiment_score: -0.81,
-    urgency_score: 8.8,
-    created_at: "2024-01-13T20:45:00Z",
-  },
-  {
-    id: "fb_008",
-    source: "github",
-    user_tier: "enterprise",
-    summary: "Streaming responses sometimes truncate without error",
-    sentiment_score: -0.73,
-    urgency_score: 8.3,
-    created_at: "2024-01-13T16:30:00Z",
-  },
-]
 
 function SourceBadge({ source }: { source: string }) {
   const colors: Record<string, string> = {
@@ -94,43 +18,92 @@ function SourceBadge({ source }: { source: string }) {
     twitter: "bg-[#1DA1F2]/10 text-[#1DA1F2]",
     forum: "bg-[#16A34A]/10 text-[#16A34A]",
   }
-
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${colors[source] || "bg-muted text-muted-foreground"}`}>
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${colors[source] ?? "bg-muted text-muted-foreground"}`}>
       {source}
     </span>
   )
 }
 
-function TierBadge({ tier }: { tier: string }) {
-  const colors: Record<string, string> = {
-    enterprise: "bg-[#F38020] text-white",
-    pro: "bg-[#0051AD] text-white",
-    free: "bg-muted text-muted-foreground",
+function CellValue({ col, value }: { col: string; value: unknown }) {
+  const str = value === null || value === undefined ? "NULL" : String(value)
+  const num = typeof value === "number" ? value : parseFloat(str)
+
+  if (col === "source") return <SourceBadge source={str} />
+
+  if (col === "customer_tier") {
+    const colors: Record<string, string> = {
+      Enterprise: "bg-[#F38020] text-white",
+      Business: "bg-[#0051AD] text-white",
+      Pro: "bg-[#0051AD]/70 text-white",
+      Free: "bg-muted text-muted-foreground",
+    }
+    return (
+      <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${colors[str] ?? "bg-muted text-muted-foreground"}`}>
+        {str}
+      </span>
+    )
   }
 
-  return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${colors[tier] || "bg-muted text-muted-foreground"}`}>
-      {tier}
-    </span>
-  )
+  if (col === "sentiment_score" && !isNaN(num)) {
+    return (
+      <span className={`font-mono text-xs ${num < -0.7 ? "text-[#DC2626]" : num < 0 ? "text-[#F38020]" : "text-[#16A34A]"}`}>
+        {num.toFixed(2)}
+      </span>
+    )
+  }
+
+  if (col === "urgency_score" && !isNaN(num)) {
+    return (
+      <span className={`font-mono text-xs ${num >= 0.8 ? "text-[#DC2626]" : "text-foreground"}`}>
+        {num.toFixed(2)}
+      </span>
+    )
+  }
+
+  return <span className="text-xs text-foreground truncate max-w-xs block">{str}</span>
 }
 
 export function SQLPlayground() {
   const [query, setQuery] = useState(defaultQuery)
   const [isRunning, setIsRunning] = useState(false)
   const [hasResults, setHasResults] = useState(false)
+  const [results, setResults] = useState<Record<string, unknown>[]>([])
+  const [columns, setColumns] = useState<string[]>([])
+  const [rowCount, setRowCount] = useState(0)
+  const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const handleRunQuery = async () => {
     setIsRunning(true)
-    // Simulate query execution
-    await new Promise((resolve) => setTimeout(resolve, 800))
-    setHasResults(true)
-    setIsRunning(false)
-    toast.success("Query executed", {
-      description: `Returned ${mockResults.length} rows in 0.${Math.floor(Math.random() * 9) + 1}s`,
-    })
+    setHasResults(false)
+    setError(null)
+    const start = Date.now()
+    try {
+      const res = await fetch("/api/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql: query }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setError(data.error)
+        toast.error("Query error", { description: data.error })
+        return
+      }
+      setResults(data.results)
+      setColumns(data.columns)
+      setRowCount(data.rowCount)
+      setHasResults(true)
+      const ms = Date.now() - start
+      toast.success(`${data.rowCount} rows · ${ms}ms`, { description: "Query executed against D1" })
+    } catch {
+      const msg = "Network error — check console"
+      setError(msg)
+      toast.error("Query failed")
+    } finally {
+      setIsRunning(false)
+    }
   }
 
   const handleCopyQuery = () => {
@@ -141,9 +114,17 @@ export function SQLPlayground() {
   }
 
   const handleExportCSV = () => {
-    toast.success("Exporting to CSV...", {
-      description: "Download will start shortly.",
-    })
+    if (!results.length) return
+    const header = columns.join(",")
+    const rows = results.map((r) => columns.map((c) => JSON.stringify(r[c] ?? "")).join(","))
+    const csv = [header, ...rows].join("\n")
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "d1-query-results.csv"
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -159,14 +140,13 @@ export function SQLPlayground() {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-full bg-[#16A34A] animate-pulse" />
-            Connected to d1://productsense-enrichment
+            Connected to d1://productsense_db
           </span>
         </div>
       </div>
 
       {/* SQL Editor */}
       <div className="rounded-lg border border-border bg-[#1a1a2e] overflow-hidden">
-        {/* Editor Header */}
         <div className="flex items-center justify-between border-b border-[#2a2a3e] px-4 py-2">
           <span className="font-mono text-xs text-[#71717A]">query.sql</span>
           <div className="flex items-center gap-2">
@@ -176,11 +156,7 @@ export function SQLPlayground() {
               className="h-7 gap-1.5 text-xs text-[#71717A] hover:text-white hover:bg-[#2a2a3e]"
               onClick={handleCopyQuery}
             >
-              {copied ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
               {copied ? "Copied" : "Copy"}
             </Button>
             <Button
@@ -195,7 +171,6 @@ export function SQLPlayground() {
           </div>
         </div>
 
-        {/* Editor Content */}
         <div className="p-4">
           <textarea
             value={query}
@@ -204,68 +179,47 @@ export function SQLPlayground() {
             spellCheck={false}
           />
         </div>
-
-        {/* Line numbers simulation */}
-        <div className="absolute left-0 top-0 p-4 font-mono text-xs text-[#4a4a5e] select-none pointer-events-none">
-          {query.split("\n").map((_, i) => (
-            <div key={i}>{i + 1}</div>
-          ))}
-        </div>
       </div>
+
+      {/* Error State */}
+      {error && (
+        <div className="rounded-lg border border-[#DC2626]/30 bg-[#FEE2E2]/50 px-4 py-3">
+          <p className="font-mono text-xs text-[#DC2626]">{error}</p>
+        </div>
+      )}
 
       {/* Results Table */}
       {hasResults && (
         <div className="rounded-lg border border-border bg-card overflow-hidden">
-          {/* Results Header */}
           <div className="flex items-center justify-between border-b border-border px-4 py-2 bg-muted/50">
             <span className="text-xs font-medium text-muted-foreground">
-              {mockResults.length} rows returned
+              {rowCount} row{rowCount !== 1 ? "s" : ""} returned
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              onClick={handleExportCSV}
-            >
+            <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleExportCSV}>
               <Download className="h-3.5 w-3.5" />
               Export CSV
             </Button>
           </div>
 
-          {/* Table */}
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/30 sticky top-0">
                 <tr>
-                  <th className="px-4 py-2 text-left font-mono text-xs font-medium text-muted-foreground">id</th>
-                  <th className="px-4 py-2 text-left font-mono text-xs font-medium text-muted-foreground">source</th>
-                  <th className="px-4 py-2 text-left font-mono text-xs font-medium text-muted-foreground">user_tier</th>
-                  <th className="px-4 py-2 text-left font-mono text-xs font-medium text-muted-foreground">summary</th>
-                  <th className="px-4 py-2 text-right font-mono text-xs font-medium text-muted-foreground">sentiment</th>
-                  <th className="px-4 py-2 text-right font-mono text-xs font-medium text-muted-foreground">urgency</th>
+                  {columns.map((col) => (
+                    <th key={col} className="px-4 py-2 text-left font-mono text-xs font-medium text-muted-foreground whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {mockResults.map((row) => (
-                  <tr key={row.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{row.id}</td>
-                    <td className="px-4 py-2">
-                      <SourceBadge source={row.source} />
-                    </td>
-                    <td className="px-4 py-2">
-                      <TierBadge tier={row.user_tier} />
-                    </td>
-                    <td className="px-4 py-2 text-xs text-foreground max-w-md truncate">{row.summary}</td>
-                    <td className="px-4 py-2 text-right">
-                      <span className={`font-mono text-xs ${row.sentiment_score < -0.7 ? "text-[#DC2626]" : "text-[#F38020]"}`}>
-                        {row.sentiment_score.toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <span className={`font-mono text-xs ${row.urgency_score >= 8 ? "text-[#DC2626]" : "text-foreground"}`}>
-                        {row.urgency_score.toFixed(1)}
-                      </span>
-                    </td>
+                {results.map((row, i) => (
+                  <tr key={i} className="hover:bg-muted/30 transition-colors">
+                    {columns.map((col) => (
+                      <td key={col} className="px-4 py-2 max-w-xs">
+                        <CellValue col={col} value={row[col]} />
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -275,11 +229,9 @@ export function SQLPlayground() {
       )}
 
       {/* Empty State */}
-      {!hasResults && (
+      {!hasResults && !error && (
         <div className="rounded-lg border border-dashed border-border bg-card/50 p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Run a query to see results here
-          </p>
+          <p className="text-sm text-muted-foreground">Run a query to see results here</p>
         </div>
       )}
     </div>

@@ -1,0 +1,25 @@
+name = "productsense"
+main = ".open-next/worker.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# ── D1 Database ───────────────────────────────────────────────────────────────
+[[d1_databases]]
+binding     = "DB"
+database_name = "productsense_db"
+database_id   = "4416b801-85d4-4314-b553-c92bee17b877"
+
+# ── KV Namespace (Daily Brief cache) ─────────────────────────────────────────
+[[kv_namespaces]]
+binding = "BRIEF_CACHE"
+id      = "f960555506e64c3a98aab0793653cd60"
+
+# ── Workers AI ────────────────────────────────────────────────────────────────
+[ai]
+binding = "AI"
+
+# ── Vectorize (semantic embeddings index) ─────────────────────────────────────
+[[vectorize]]
+binding    = "VECTORIZE"
+index_name = "productsense-embeddings"

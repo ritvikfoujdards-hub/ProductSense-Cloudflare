@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { IntelligenceBento } from "@/components/intelligence-bento"
@@ -9,15 +9,7 @@ import { WeightsPanel } from "@/components/weights-panel"
 import { SQLPlayground } from "@/components/sql-playground"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
-import {
-  mockBrief,
-  altMockBrief,
-  mockDashboardMetrics,
-  defaultWeights,
-  type Brief,
-  type Signal,
-  type Weights,
-} from "@/lib/data"
+import type { Brief, DashboardMetrics, Signal, Weights } from "@/lib/data"
 
 function computeRankChanges(
   signals: Signal[],
@@ -26,7 +18,7 @@ function computeRankChanges(
 ): Record<string, number> {
   const score = (s: Signal, w: Weights) => {
     const srcAvg =
-      s.items.reduce((acc, item) => acc + (w.sources[item.source] ?? 1), 0) /
+      s.items.reduce((acc, item) => acc + ((w.sources as Record<string, number>)[item.source] ?? 1), 0) /
       (s.items.length || 1)
     const themeBoost = w.themeBoosts.includes(s.theme) ? 1.5 : 1.0
     return s.scoreBreakdown.volume * s.scoreBreakdown.urgency * srcAvg * themeBoost
@@ -42,58 +34,113 @@ function computeRankChanges(
   return result
 }
 
+const emptyWeights: Weights = {
+  sources: { discord: 1, github: 1.5, support: 3, twitter: 0.5, forum: 1 },
+  themeBoosts: [],
+  recencyHalfLife: 24,
+  sentimentThreshold: -0.2,
+}
+
 export default function ProductSensePage() {
   const [activeTab, setActiveTab] = useState("pulse")
-  const [brief, setBrief] = useState<Brief>(mockBrief)
-  const [weights, setWeights] = useState<Weights>(defaultWeights)
-  const [liveWeights, setLiveWeights] = useState<Weights>(defaultWeights)
+  const [brief, setBrief] = useState<Brief | null>(null)
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [weights, setWeights] = useState<Weights>(emptyWeights)
+  const [liveWeights, setLiveWeights] = useState<Weights>(emptyWeights)
   const [isLoading, setIsLoading] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [expandedSignal, setExpandedSignal] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState("7d")
 
+  // Initial data load from D1
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/brief").then((r) => r.json()),
+      fetch("/api/metrics?range=7d").then((r) => r.json()),
+      fetch("/api/weights").then((r) => r.json()),
+    ])
+      .then(([briefData, metricsData, weightsData]) => {
+        setBrief(briefData)
+        setMetrics(metricsData)
+        setWeights(weightsData)
+        setLiveWeights(weightsData)
+      })
+      .catch(() => toast.error("Failed to load data from D1"))
+      .finally(() => setInitialLoading(false))
+  }, [])
+
   const rankChanges = useMemo(
-    () => computeRankChanges(brief.signals, weights, liveWeights),
-    [brief.signals, weights, liveWeights]
+    () => (brief ? computeRankChanges(brief.signals, weights, liveWeights) : {}),
+    [brief, weights, liveWeights]
   )
 
   const handleRegenerate = useCallback(async () => {
     setIsLoading(true)
     setExpandedSignal(null)
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    setBrief((prev) => (prev === mockBrief ? altMockBrief : mockBrief))
-    setIsLoading(false)
-    toast.success("Brief regenerated", {
-      description: "Signal rankings have been updated.",
-    })
+    try {
+      const data = await fetch("/api/brief/regenerate", { method: "POST" }).then((r) => r.json())
+      setBrief(data)
+      toast.success("Brief regenerated", { description: "Signal rankings have been updated." })
+    } catch {
+      toast.error("Failed to regenerate brief")
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
 
   const handleDateRangeChange = useCallback(async (range: string) => {
     setDateRange(range)
     setIsLoading(true)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    setIsLoading(false)
+    setExpandedSignal(null)
+    try {
+      const [metricsData] = await Promise.all([
+        fetch(`/api/metrics?range=${range}`).then((r) => r.json()),
+      ])
+      setMetrics(metricsData)
+    } catch {
+      toast.error("Failed to refresh metrics")
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
 
-  const handleApplyWeights = useCallback(async (newWeights: Weights) => {
-    setIsApplying(true)
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    setIsApplying(false)
+  const handleApplyWeights = useCallback(
+    async (newWeights: Weights) => {
+      setIsApplying(true)
+      await new Promise((r) => setTimeout(r, 1500))
+      setIsApplying(false)
+      setIsLoading(true)
+      setExpandedSignal(null)
+      try {
+        const res = await fetch("/api/weights", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newWeights),
+        })
+        const { brief: newBrief } = await res.json()
+        setBrief(newBrief)
+        setWeights(newWeights)
+        setLiveWeights(newWeights)
+        toast.success("Weights applied", { description: "Brief regenerated with new parameters." })
+      } catch {
+        toast.error("Failed to apply weights")
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    []
+  )
 
-    setIsLoading(true)
-    setExpandedSignal(null)
-    setWeights(newWeights)
-    setLiveWeights(newWeights)
-
-    await new Promise((resolve) => setTimeout(resolve, 500))
-
-    const supportLowered = newWeights.sources.support < defaultWeights.sources.support
-    setBrief(supportLowered ? altMockBrief : mockBrief)
-
-    setIsLoading(false)
-    toast.success("Weights applied", {
-      description: "Brief regenerated with new parameters.",
-    })
+  const handleRejectSignal = useCallback(async (signalId: string) => {
+    try {
+      await fetch(`/api/signals/${signalId}/dismiss`, { method: "POST" })
+      setBrief((prev) =>
+        prev ? { ...prev, signals: prev.signals.filter((s) => s.id !== signalId) } : prev
+      )
+    } catch {
+      toast.error("Failed to dismiss signal")
+    }
   }, [])
 
   const handleToggleSignal = useCallback((signalId: string) => {
@@ -104,13 +151,15 @@ export default function ProductSensePage() {
     setActiveTab(tab)
   }, [])
 
+  const showSkeleton = initialLoading || isLoading
+
   return (
     <div className="min-h-screen bg-background">
       <Sidebar activeTab={activeTab} onTabChange={handleTabChange} />
 
       <div className="pl-16">
         <DashboardHeader
-          lastBriefTime={brief.generatedAt}
+          lastBriefTime={brief?.generatedAt ?? "—"}
           isLoading={isLoading}
           onRegenerate={handleRegenerate}
           dateRange={dateRange}
@@ -120,7 +169,20 @@ export default function ProductSensePage() {
         <main className="p-6">
           {activeTab === "pulse" && (
             <>
-              <IntelligenceBento metrics={mockDashboardMetrics} isLoading={isLoading} dateRange={dateRange} />
+              <IntelligenceBento
+                metrics={metrics ?? {
+                  sentimentScore: 0,
+                  sentimentChange: 0,
+                  feedbackVolume24h: 0,
+                  volumeChange: 0,
+                  topTheme: "—",
+                  themeCount: 0,
+                  pipelineStatus: "healthy",
+                  lastProcessed: "—",
+                }}
+                isLoading={showSkeleton}
+                dateRange={dateRange}
+              />
 
               <div className="mt-8 mb-4 flex items-center justify-between">
                 <div>
@@ -130,23 +192,23 @@ export default function ProductSensePage() {
                   </p>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  Last updated: <span className="font-mono">{brief.generatedAt}</span>
+                  Last updated: <span className="font-mono">{brief?.generatedAt ?? "—"}</span>
                 </div>
               </div>
 
               <div className="space-y-4">
-                {!isLoading &&
-                  brief.signals.map((signal, index) => (
-                    <SignalCard
-                      key={signal.id}
-                      signal={{ ...signal, number: index + 1 }}
-                      isExpanded={expandedSignal === signal.id}
-                      onToggleExpand={() => handleToggleSignal(signal.id)}
-                      rankChange={rankChanges[signal.id] ?? 0}
-                    />
-                  ))}
+                {!showSkeleton && brief?.signals.map((signal, index) => (
+                  <SignalCard
+                    key={signal.id}
+                    signal={{ ...signal, number: index + 1 }}
+                    isExpanded={expandedSignal === signal.id}
+                    onToggleExpand={() => handleToggleSignal(signal.id)}
+                    rankChange={rankChanges[signal.id] ?? 0}
+                    onReject={handleRejectSignal}
+                  />
+                ))}
 
-                {isLoading && (
+                {showSkeleton && (
                   <div className="space-y-4">
                     {[1, 2, 3].map((i) => (
                       <div key={i} className="rounded-lg border border-border bg-card p-4">

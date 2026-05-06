@@ -13,7 +13,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { themes, type Weights, defaultWeights } from "@/lib/data"
+import { themes, type Weights } from "@/lib/data"
+
+const defaultWeights: Weights = {
+  sources: { discord: 1.0, github: 1.5, support: 3.0, twitter: 0.5, forum: 1.0 },
+  themeBoosts: ["Reliability", "Bugs"],
+  recencyHalfLife: 24,
+  sentimentThreshold: -0.2,
+}
 
 interface WeightsPanelProps {
   weights: Weights
@@ -51,38 +58,35 @@ export function WeightsPanel({ weights, onApply, onWeightsChange, isLoading }: W
   }, [localWeights, weights])
 
   const handleSourceChange = (source: keyof Weights["sources"], value: number) => {
-    setLocalWeights((prev) => {
-      const next = { ...prev, sources: { ...prev.sources, [source]: Math.max(0, Math.min(5, value)) } }
-      onWeightsChange?.(next)
-      return next
-    })
+    const next = {
+      ...localWeights,
+      sources: { ...localWeights.sources, [source]: Math.max(0, Math.min(5, value)) },
+    }
+    setLocalWeights(next)
+    onWeightsChange?.(next)
   }
 
   const handleThemeToggle = (theme: string, checked: boolean) => {
-    setLocalWeights((prev) => {
-      const next = {
-        ...prev,
-        themeBoosts: checked ? [...prev.themeBoosts, theme] : prev.themeBoosts.filter((t) => t !== theme),
-      }
-      onWeightsChange?.(next)
-      return next
-    })
+    const next = {
+      ...localWeights,
+      themeBoosts: checked
+        ? [...localWeights.themeBoosts, theme]
+        : localWeights.themeBoosts.filter((t) => t !== theme),
+    }
+    setLocalWeights(next)
+    onWeightsChange?.(next)
   }
 
   const handleRecencyChange = (value: number) => {
-    setLocalWeights((prev) => {
-      const next = { ...prev, recencyHalfLife: Math.max(1, Math.min(168, value)) }
-      onWeightsChange?.(next)
-      return next
-    })
+    const next = { ...localWeights, recencyHalfLife: Math.max(1, Math.min(168, value)) }
+    setLocalWeights(next)
+    onWeightsChange?.(next)
   }
 
   const handleSentimentChange = (value: number) => {
-    setLocalWeights((prev) => {
-      const next = { ...prev, sentimentThreshold: Math.max(-1, Math.min(0, value)) }
-      onWeightsChange?.(next)
-      return next
-    })
+    const next = { ...localWeights, sentimentThreshold: Math.max(-1, Math.min(0, value)) }
+    setLocalWeights(next)
+    onWeightsChange?.(next)
   }
 
   const handleReset = () => {

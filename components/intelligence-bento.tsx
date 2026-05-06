@@ -10,7 +10,6 @@ interface IntelligenceBentoProps {
   dateRange?: string
 }
 
-// Mini sparkline SVG component
 function Sparkline({ data, color }: { data: number[]; color: string }) {
   const width = 60
   const height = 20
@@ -40,21 +39,19 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
   )
 }
 
-const sparklineDataByRange: Record<string, number[]> = {
-  "7d":  [-0.20, -0.25, -0.30, -0.28, -0.35, -0.32, -0.34],
-  "14d": [-0.15, -0.18, -0.20, -0.25, -0.22, -0.28, -0.30, -0.27, -0.32, -0.30, -0.34, -0.31, -0.35, -0.34],
-  "30d": [-0.10, -0.12, -0.14, -0.13, -0.16, -0.18, -0.17, -0.20, -0.19, -0.22, -0.21, -0.24, -0.23, -0.26, -0.25, -0.27, -0.26, -0.28, -0.27, -0.30, -0.29, -0.31, -0.30, -0.32, -0.31, -0.33, -0.32, -0.34, -0.33, -0.34],
-}
-
 export function IntelligenceBento({ metrics, isLoading, dateRange = "7d" }: IntelligenceBentoProps) {
-  const [syncMinutes, setSyncMinutes] = useState(2)
+  const [sparklineValues, setSparklineValues] = useState<number[]>([])
+  const [sparklineLoading, setSparklineLoading] = useState(true)
 
   useEffect(() => {
-    const interval = setInterval(() => setSyncMinutes((m) => m + 1), 60000)
-    return () => clearInterval(interval)
-  }, [])
+    setSparklineLoading(true)
+    fetch(`/api/metrics/history?range=${dateRange}`)
+      .then((r) => r.json())
+      .then((data) => setSparklineValues(data.values ?? []))
+      .catch(() => setSparklineValues([]))
+      .finally(() => setSparklineLoading(false))
+  }, [dateRange])
 
-  const sentimentTrendData = sparklineDataByRange[dateRange] ?? sparklineDataByRange["7d"]
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Sentiment Score */}
@@ -64,11 +61,12 @@ export function IntelligenceBento({ metrics, isLoading, dateRange = "7d" }: Inte
             <Activity className="h-4 w-4" />
             <span className="text-xs font-medium uppercase tracking-wide">Sentiment</span>
           </div>
-          {/* Sparkline */}
-          <Sparkline 
-            data={sentimentTrendData} 
-            color={metrics.sentimentChange < 0 ? "#DC2626" : "#16A34A"} 
-          />
+          {!sparklineLoading && sparklineValues.length >= 2 && (
+            <Sparkline
+              data={sparklineValues}
+              color={metrics.sentimentChange < 0 ? "#DC2626" : "#16A34A"}
+            />
+          )}
         </div>
         <div className="flex items-baseline gap-2">
           {isLoading ? (
@@ -91,7 +89,7 @@ export function IntelligenceBento({ metrics, isLoading, dateRange = "7d" }: Inte
             {Math.abs(metrics.sentimentChange)}%
           </span>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">vs. last week</p>
+        <p className="text-xs text-muted-foreground mt-1">vs. previous period</p>
       </div>
 
       {/* Feedback Volume */}
@@ -138,7 +136,7 @@ export function IntelligenceBento({ metrics, isLoading, dateRange = "7d" }: Inte
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          {metrics.themeCount} signals this week
+          {metrics.themeCount} signals this period
         </p>
       </div>
 
@@ -161,7 +159,7 @@ export function IntelligenceBento({ metrics, isLoading, dateRange = "7d" }: Inte
           <span className="text-lg font-semibold capitalize">{metrics.pipelineStatus}</span>
         </div>
         <p className="text-xs text-muted-foreground mt-1 font-mono">
-          Last sync: {syncMinutes} min ago
+          Last sync: {metrics.lastProcessed}
         </p>
       </div>
     </div>
