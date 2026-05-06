@@ -1,0 +1,90 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #FAFAFA;
+  --foreground: #1a1a2e;
+  --card: #FFFFFF;
+  --card-foreground: #1a1a2e;
+  --popover: #FFFFFF;
+  --popover-foreground: #1a1a2e;
+  --primary: #F38020;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F4F4F5;
+  --secondary-foreground: #1a1a2e;
+  --muted: #F4F4F5;
+  --muted-foreground: #71717A;
+  --accent: #F4F4F5;
+  --accent-foreground: #1a1a2e;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: #E4E4E7;
+  --input: #E4E4E7;
+  --ring: #F38020;
+  --radius: 0.375rem;
+  
+  /* Cloudflare Dashboard palette */
+  --cf-orange: #F38020;
+  --cf-orange-light: #FEF3E8;
+  --cf-blue: #0051AD;
+  --cf-blue-light: #E6F0FA;
+  --cf-green: #16A34A;
+  --cf-green-light: #DCFCE7;
+  --cf-red: #DC2626;
+  --cf-red-light: #FEE2E2;
+  --cf-zinc: #71717A;
+  --cf-zinc-light: #F4F4F5;
+}
+
+
+
+@theme inline {
+  --font-sans: var(--font-sans), 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  
+  /* Cloudflare Dashboard colors */
+  --color-cf-orange: var(--cf-orange);
+  --color-cf-orange-light: var(--cf-orange-light);
+  --color-cf-blue: var(--cf-blue);
+  --color-cf-blue-light: var(--cf-blue-light);
+  --color-cf-green: var(--cf-green);
+  --color-cf-green-light: var(--cf-green-light);
+  --color-cf-red: var(--cf-red);
+  --color-cf-red-light: var(--cf-red-light);
+  --color-cf-zinc: var(--cf-zinc);
+  --color-cf-zinc-light: var(--cf-zinc-light);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
