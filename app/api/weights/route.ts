@@ -43,9 +43,12 @@ export async function POST(req: Request) {
       ]
     )
 
-    // Fetch all non-dismissed signals
+    // Restore dismissed signals — new weights may rank them differently
+    await queryD1("UPDATE signals SET is_dismissed = 0")
+
+    // Fetch all signals for score recomputation
     const signals = await queryD1<{ id: string; theme: string }>(
-      "SELECT id, theme FROM signals WHERE is_dismissed = 0"
+      "SELECT id, theme FROM signals"
     )
 
     // Recompute score for each signal
@@ -104,8 +107,7 @@ export async function POST(req: Request) {
         `SELECT bs.signal_id, sb.score
          FROM brief_signals bs
          JOIN score_breakdowns sb ON sb.signal_id = bs.signal_id
-         JOIN signals s ON s.id = bs.signal_id
-         WHERE bs.brief_id = ? AND s.is_dismissed = 0
+         WHERE bs.brief_id = ?
          ORDER BY sb.score DESC`,
         [briefId]
       )

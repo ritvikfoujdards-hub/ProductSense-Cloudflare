@@ -3,6 +3,12 @@ main               = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# ── Cron Trigger: keeps the pipeline alive ────────────────────────────────────
+# Fires every 30 minutes. The scheduled handler ingests 2 synthetic feedback
+# items so MAX(ingested_at) stays fresh and pipeline status stays "healthy".
+[triggers]
+crons = ["*/30 * * * *"]
+
 [[d1_databases]]
 binding       = "DB"
 database_name = "productsense_db"

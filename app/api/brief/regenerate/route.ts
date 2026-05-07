@@ -14,6 +14,9 @@ export async function POST() {
     if (!briefs.length) return NextResponse.json({ error: "No brief found" }, { status: 404 })
     const briefId = briefs[0].id
 
+    // Restore all dismissed signals so re-run gives a fresh ranking
+    await queryD1("UPDATE signals SET is_dismissed = 0")
+
     const signalScores = await queryD1<{ signal_id: string; score: number }>(
       `SELECT bs.signal_id, sb.score
        FROM brief_signals bs

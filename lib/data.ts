@@ -53,6 +53,24 @@ export interface Signal {
   enterpriseCount: number
   scoreBreakdown: ScoreBreakdown
   items: FeedbackItem[]
+  onRoadmap?: boolean
+}
+
+export type DevUrgency = "high" | "medium" | "low"
+export type RoadmapStatus = "proposed" | "in_progress" | "shipped" | "declined"
+
+export interface RoadmapItem {
+  id: string
+  title: string
+  description: string
+  signalId: string | null
+  status: RoadmapStatus
+  pmPriority: Criticality
+  devUrgency: DevUrgency
+  upvotes: number
+  downvotes: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface Brief {

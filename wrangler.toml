@@ -1,12 +1,17 @@
 name = "productsense"
 main = ".open-next/worker.js"
-compatibility_date = "2025-01-01"
+compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+# ── Static Assets (CSS, JS, images served from CDN) ──────────────────────────
+[assets]
+directory = ".open-next/assets"
+binding   = "ASSETS"
+
 # ── D1 Database ───────────────────────────────────────────────────────────────
 [[d1_databases]]
-binding     = "DB"
+binding       = "DB"
 database_name = "productsense_db"
 database_id   = "4416b801-85d4-4314-b553-c92bee17b877"
 

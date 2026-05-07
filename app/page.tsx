@@ -7,6 +7,8 @@ import { IntelligenceBento } from "@/components/intelligence-bento"
 import { SignalCard } from "@/components/signal-card"
 import { WeightsPanel } from "@/components/weights-panel"
 import { SQLPlayground } from "@/components/sql-playground"
+import { RoadmapBoard } from "@/components/roadmap-board"
+import { PRDEditor } from "@/components/prd-editor"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
 import type { Brief, DashboardMetrics, Signal, Weights } from "@/lib/data"
@@ -51,6 +53,8 @@ export default function ProductSensePage() {
   const [isApplying, setIsApplying] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [expandedSignal, setExpandedSignal] = useState<string | null>(null)
+  const [showMoreSignals, setShowMoreSignals] = useState(false)
+  const [prdSignal, setPrdSignal] = useState<Signal | null>(null)
   const [dateRange, setDateRange] = useState("7d")
 
   // Initial data load from D1
@@ -75,19 +79,31 @@ export default function ProductSensePage() {
     [brief, weights, liveWeights]
   )
 
+  // Shared helper — refreshes the top-4 tiles from the live metrics API.
+  // Called after any mutation that can change signal ranking or volume.
+  const refreshMetrics = useCallback(async () => {
+    try {
+      const metricsData = await fetch(`/api/metrics?range=${dateRange}`).then((r) => r.json())
+      setMetrics(metricsData)
+    } catch {
+      // non-critical — tiles keep their last value
+    }
+  }, [dateRange])
+
   const handleRegenerate = useCallback(async () => {
     setIsLoading(true)
     setExpandedSignal(null)
     try {
       const data = await fetch("/api/brief/regenerate", { method: "POST" }).then((r) => r.json())
       setBrief(data)
+      await refreshMetrics()
       toast.success("Brief regenerated", { description: "Signal rankings have been updated." })
     } catch {
       toast.error("Failed to regenerate brief")
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [refreshMetrics])
 
   const handleDateRangeChange = useCallback(async (range: string) => {
     setDateRange(range)
@@ -122,6 +138,7 @@ export default function ProductSensePage() {
         setBrief(newBrief)
         setWeights(newWeights)
         setLiveWeights(newWeights)
+        await refreshMetrics()
         toast.success("Weights applied", { description: "Brief regenerated with new parameters." })
       } catch {
         toast.error("Failed to apply weights")
@@ -129,7 +146,7 @@ export default function ProductSensePage() {
         setIsLoading(false)
       }
     },
-    []
+    [refreshMetrics]
   )
 
   const handleRejectSignal = useCallback(async (signalId: string) => {
@@ -138,9 +155,18 @@ export default function ProductSensePage() {
       setBrief((prev) =>
         prev ? { ...prev, signals: prev.signals.filter((s) => s.id !== signalId) } : prev
       )
+      refreshMetrics() // fire-and-forget — dismissed signal can change topTheme
     } catch {
       toast.error("Failed to dismiss signal")
     }
+  }, [refreshMetrics])
+
+  const handlePushToRoadmap = useCallback((signalId: string, onRoadmap: boolean) => {
+    setBrief((prev) =>
+      prev
+        ? { ...prev, signals: prev.signals.map((s) => s.id === signalId ? { ...s, onRoadmap } : s) }
+        : prev
+    )
   }, [])
 
   const handleToggleSignal = useCallback((signalId: string) => {
@@ -197,7 +223,7 @@ export default function ProductSensePage() {
               </div>
 
               <div className="space-y-4">
-                {!showSkeleton && brief?.signals.map((signal, index) => (
+                {!showSkeleton && brief?.signals.slice(0, showMoreSignals ? 5 : 3).map((signal, index) => (
                   <SignalCard
                     key={signal.id}
                     signal={{ ...signal, number: index + 1 }}
@@ -205,8 +231,21 @@ export default function ProductSensePage() {
                     onToggleExpand={() => handleToggleSignal(signal.id)}
                     rankChange={rankChanges[signal.id] ?? 0}
                     onReject={handleRejectSignal}
+                    onPushToRoadmap={handlePushToRoadmap}
+                    onDraftPRD={setPrdSignal}
                   />
                 ))}
+
+                {!showSkeleton && (brief?.signals.length ?? 0) > 3 && (
+                  <button
+                    onClick={() => setShowMoreSignals((v) => !v)}
+                    className="w-full rounded-lg border border-dashed border-border py-3 text-sm text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors"
+                  >
+                    {showMoreSignals
+                      ? "Show fewer signals"
+                      : `Show ${Math.min((brief?.signals.length ?? 0) - 3, 2)} more signal${Math.min((brief?.signals.length ?? 0) - 3, 2) !== 1 ? "s" : ""}`}
+                  </button>
+                )}
 
                 {showSkeleton && (
                   <div className="space-y-4">
@@ -233,23 +272,50 @@ export default function ProductSensePage() {
           )}
 
           {activeTab === "signals" && (
-            <div className="rounded-lg border border-border bg-card p-8 text-center">
-              <h2 className="text-lg font-semibold text-foreground">Signals Explorer</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Full signal history and search coming soon.
-              </p>
-            </div>
+            <>
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold text-foreground">Last Run Signals</h2>
+                <p className="text-sm text-muted-foreground">
+                  All {Math.min(brief?.signals.length ?? 0, 10)} signals from the most recent brief · sorted by score
+                </p>
+              </div>
+              <div className="space-y-4">
+                {showSkeleton && [1, 2, 3].map((i) => (
+                  <div key={i} className="rounded-lg border border-border bg-card p-4">
+                    <div className="h-5 w-full animate-pulse rounded bg-muted mb-3" />
+                    <div className="h-12 w-full animate-pulse rounded bg-muted" />
+                  </div>
+                ))}
+                {!showSkeleton && (brief?.signals ?? []).slice(0, 10).map((signal, index) => (
+                  <SignalCard
+                    key={signal.id}
+                    signal={{ ...signal, number: index + 1 }}
+                    isExpanded={expandedSignal === signal.id}
+                    onToggleExpand={() => handleToggleSignal(signal.id)}
+                    rankChange={0}
+                    onReject={handleRejectSignal}
+                    onPushToRoadmap={handlePushToRoadmap}
+                    onDraftPRD={setPrdSignal}
+                  />
+                ))}
+                {!showSkeleton && !brief?.signals.length && (
+                  <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                    No signals yet — generate a brief to populate this view.
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           {activeTab === "explorer" && <SQLPlayground />}
 
           {activeTab === "roadmap" && (
-            <div className="rounded-lg border border-border bg-card p-8 text-center">
-              <h2 className="text-lg font-semibold text-foreground">Roadmap</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Signal-to-roadmap pipeline coming soon.
-              </p>
-            </div>
+            <RoadmapBoard
+              onGoToSignal={(signalId) => {
+                setActiveTab("pulse")
+                setExpandedSignal(signalId)
+              }}
+            />
           )}
 
           {activeTab === "weights" && (
@@ -262,6 +328,11 @@ export default function ProductSensePage() {
           )}
         </main>
       </div>
+
+      {/* PRD Editor */}
+      {prdSignal && (
+        <PRDEditor signal={prdSignal} onClose={() => setPrdSignal(null)} />
+      )}
 
       {/* Workers AI Processing Overlay */}
       {isApplying && (

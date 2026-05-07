@@ -34,6 +34,8 @@ interface SignalCardProps {
   onToggleExpand: () => void
   rankChange?: number
   onReject?: (signalId: string) => void
+  onPushToRoadmap?: (signalId: string, onRoadmap: boolean) => void
+  onDraftPRD?: (signal: Signal) => void
 }
 
 function CriticalityBadge({ criticality }: { criticality: Criticality }) {
@@ -118,7 +120,7 @@ function SlackIcon() {
   )
 }
 
-export function SignalCard({ signal, isExpanded, onToggleExpand, rankChange = 0, onReject }: SignalCardProps) {
+export function SignalCard({ signal, isExpanded, onToggleExpand, rankChange = 0, onReject, onPushToRoadmap, onDraftPRD }: SignalCardProps) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [vote, setVote] = useState<"up" | "down" | null>(null)
   const [scoreFlash, setScoreFlash] = useState(false)
@@ -146,15 +148,54 @@ export function SignalCard({ signal, isExpanded, onToggleExpand, rankChange = 0,
   }
 
   const handleDraftPRD = () => {
-    toast.success("PRD draft created", {
-      description: "Opening document editor...",
-    })
+    if (onDraftPRD) {
+      onDraftPRD(signal)
+    } else {
+      toast.info("Draft PRD", { description: "Open the Pulse tab to draft a PRD." })
+    }
   }
 
-  const handleAddToRoadmap = () => {
-    toast.success("Added to roadmap", {
-      description: "Signal added to Q2 planning board.",
-    })
+  const [pushing, setPushing] = useState(false)
+
+  const handleAddToRoadmap = async () => {
+    if (pushing) return
+
+    if (signal.onRoadmap) {
+      setPushing(true)
+      try {
+        const res = await fetch(`/api/signals/${signal.id}/push-to-roadmap`, { method: "DELETE" })
+        if (!res.ok) throw new Error()
+        toast.success("Removed from roadmap", { description: "The signal is no longer tracked on the roadmap." })
+        if (onPushToRoadmap) onPushToRoadmap(signal.id, false)
+      } catch {
+        toast.error("Failed to remove from roadmap")
+      } finally {
+        setPushing(false)
+      }
+      return
+    }
+
+    setPushing(true)
+    try {
+      const res = await fetch(`/api/signals/${signal.id}/push-to-roadmap`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `${signal.product}: ${signal.theme}`,
+          description: signal.suggestedAction,
+          pmPriority: signal.criticality,
+          devUrgency: signal.criticality,
+        }),
+      })
+      if (res.status === 409) { toast.info("Already on roadmap"); return }
+      if (!res.ok) throw new Error()
+      toast.success("Pushed to roadmap", { description: "Visit the Roadmap tab to manage it." })
+      if (onPushToRoadmap) onPushToRoadmap(signal.id, true)
+    } catch {
+      toast.error("Failed to push to roadmap")
+    } finally {
+      setPushing(false)
+    }
   }
 
   const handleVote = (direction: "up" | "down") => {
@@ -340,15 +381,30 @@ export function SignalCard({ signal, isExpanded, onToggleExpand, rankChange = 0,
             <FileText className="h-3.5 w-3.5" />
             Draft PRD
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 text-xs border-border text-[#0051AD]"
-            onClick={handleAddToRoadmap}
-          >
-            <MapPin className="h-3.5 w-3.5" />
-            Add to Roadmap
-          </Button>
+          {signal.onRoadmap ? (
+            <button
+              onClick={handleAddToRoadmap}
+              disabled={pushing}
+              className="group inline-flex items-center gap-1.5 rounded border border-[#16A34A]/40 bg-[#DCFCE7] px-2.5 py-1 text-xs font-medium text-[#16A34A] transition-colors hover:border-[#DC2626]/40 hover:bg-[#FEE2E2] hover:text-[#DC2626] disabled:opacity-60"
+              title="Click to remove from roadmap"
+            >
+              <MapPin className="h-3.5 w-3.5 group-hover:hidden" />
+              <X className="h-3.5 w-3.5 hidden group-hover:block" />
+              <span className="group-hover:hidden">{pushing ? "Removing…" : "On Roadmap"}</span>
+              <span className="hidden group-hover:inline">{pushing ? "Removing…" : "Remove"}</span>
+            </button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs border-border text-[#0051AD]"
+              onClick={handleAddToRoadmap}
+              disabled={pushing}
+            >
+              <MapPin className="h-3.5 w-3.5" />
+              {pushing ? "Pushing…" : "→ Roadmap"}
+            </Button>
+          )}
 
           <div className="flex-1" />
 

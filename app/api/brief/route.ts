@@ -12,7 +12,7 @@ type SignalRow = {
   evidence: string; previous_sentiment: number; current_sentiment: number
   pull_quote: string; suggested_action: string; item_count: number; enterprise_count: number
   volume: number; urgency: number; source_weight_avg: number; theme_boost: number
-  recency: number; sentiment_delta: number; score: number; rank: number
+  recency: number; sentiment_delta: number; score: number; rank: number; on_roadmap: number
 }
 
 export async function assembleBrief(): Promise<Brief | null> {
@@ -25,7 +25,7 @@ export async function assembleBrief(): Promise<Brief | null> {
   const signalRows = await queryD1<SignalRow>(
     `SELECT s.id, s.product, s.theme, s.criticality, s.trend, s.evidence,
             s.previous_sentiment, s.current_sentiment, s.pull_quote, s.suggested_action,
-            s.item_count, s.enterprise_count,
+            s.item_count, s.enterprise_count, s.on_roadmap,
             sb.volume, sb.urgency, sb.source_weight_avg, sb.theme_boost,
             sb.recency, sb.sentiment_delta, sb.score, bs.rank
      FROM brief_signals bs
@@ -71,6 +71,7 @@ export async function assembleBrief(): Promise<Brief | null> {
         suggestedAction: row.suggested_action,
         itemCount: row.item_count,
         enterpriseCount: row.enterprise_count,
+        onRoadmap: row.on_roadmap === 1,
         scoreBreakdown,
         items: itemRows.map(mapRowToFeedbackItem as (r: Record<string, unknown>) => ReturnType<typeof mapRowToFeedbackItem>),
       }

@@ -8,6 +8,25 @@ function rangeToHours(range: string): number {
   return 168 // default 7d
 }
 
+type SourceRow = { source: string; avg_sentiment: number; cnt: number }
+
+function computeWeightedMetrics(
+  rows: SourceRow[],
+  sourceWeights: Record<string, number>
+): { sentiment: number; volume: number } {
+  let sentSum = 0
+  let volSum = 0
+  for (const row of rows) {
+    const w = sourceWeights[row.source] ?? 1.0
+    sentSum += row.avg_sentiment * w * row.cnt
+    volSum  += w * row.cnt
+  }
+  return {
+    sentiment: volSum > 0 ? Math.round((sentSum / volSum) * 100) / 100 : 0,
+    volume:    Math.round(volSum),
+  }
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
@@ -15,48 +34,62 @@ export async function GET(req: Request) {
     const hours = rangeToHours(range)
     const prevHours = hours * 2
 
-    const [currentRows, previousRows, themeRows, pipelineRows] = await Promise.all([
-      // Current period: avg sentiment + volume
-      queryD1<{ avg_sentiment: number; volume: number }>(
-        `SELECT ROUND(AVG(sentiment_score), 2) AS avg_sentiment, COUNT(*) AS volume
-         FROM enrichment
-         WHERE ingested_at > datetime('now', '-${hours} hours')`
+    const [policyRows, currentRows, previousRows, themeRows, pipelineRows] = await Promise.all([
+      // Active weighting policy — drives weighted sentiment + volume
+      queryD1<{ source_weights: string }>(
+        "SELECT source_weights FROM weighting_policies WHERE is_active = 1 LIMIT 1"
       ),
-      // Previous period (same window, shifted back) for delta computation
-      queryD1<{ avg_sentiment: number; volume: number }>(
-        `SELECT ROUND(AVG(sentiment_score), 2) AS avg_sentiment, COUNT(*) AS volume
+      // Current period: per-source avg sentiment + count
+      queryD1<SourceRow>(
+        `SELECT source,
+                ROUND(AVG(sentiment_score), 3) AS avg_sentiment,
+                COUNT(*) AS cnt
+         FROM enrichment
+         WHERE ingested_at > datetime('now', '-${hours} hours')
+         GROUP BY source`
+      ),
+      // Previous period (same window shifted back) for delta
+      queryD1<SourceRow>(
+        `SELECT source,
+                ROUND(AVG(sentiment_score), 3) AS avg_sentiment,
+                COUNT(*) AS cnt
          FROM enrichment
          WHERE ingested_at > datetime('now', '-${prevHours} hours')
-           AND ingested_at <= datetime('now', '-${hours} hours')`
+           AND ingested_at <= datetime('now', '-${hours} hours')
+         GROUP BY source`
       ),
-      // Top theme by signal count
+      // Top theme = theme of the highest-scored non-dismissed signal
       queryD1<{ theme: string; cnt: number }>(
-        `SELECT theme, COUNT(*) AS cnt FROM signals
-         WHERE is_dismissed = 0
-         GROUP BY theme ORDER BY cnt DESC LIMIT 1`
+        `SELECT s.theme AS theme,
+                (SELECT COUNT(*) FROM signals WHERE theme = s.theme AND is_dismissed = 0) AS cnt
+         FROM score_breakdowns sb
+         JOIN signals s ON s.id = sb.signal_id
+         WHERE s.is_dismissed = 0
+         ORDER BY sb.score DESC
+         LIMIT 1`
       ),
-      // Last ingestion timestamp for pipeline health
+      // Last ingestion time for pipeline health
       queryD1<{ last_ingested: string }>(
         "SELECT MAX(ingested_at) AS last_ingested FROM enrichment"
       ),
     ])
 
-    const currentSentiment = currentRows[0]?.avg_sentiment ?? 0
-    const currentVolume = currentRows[0]?.volume ?? 0
-    const prevSentiment = previousRows[0]?.avg_sentiment ?? currentSentiment
-    const prevVolume = previousRows[0]?.volume ?? currentVolume
+    const sourceWeights: Record<string, number> = policyRows[0]
+      ? JSON.parse(policyRows[0].source_weights)
+      : {}
 
-    // Sentiment change as percentage points (e.g. -0.34 → -0.20 = +14pp)
+    const current  = computeWeightedMetrics(currentRows,  sourceWeights)
+    const previous = computeWeightedMetrics(previousRows, sourceWeights)
+
     const sentimentChange =
-      prevSentiment === 0
+      previous.sentiment === 0
         ? 0
-        : Math.round(((currentSentiment - prevSentiment) / Math.abs(prevSentiment)) * 100)
+        : Math.round(((current.sentiment - previous.sentiment) / Math.abs(previous.sentiment)) * 100)
 
-    // Volume change as percentage
     const volumeChange =
-      prevVolume === 0
+      previous.volume === 0
         ? 0
-        : Math.round(((currentVolume - prevVolume) / prevVolume) * 100)
+        : Math.round(((current.volume - previous.volume) / previous.volume) * 100)
 
     const lastIngested = pipelineRows[0]?.last_ingested
     const minutesSinceSync = lastIngested
@@ -73,18 +106,16 @@ export async function GET(req: Request) {
       minutesSinceSync >= 60   ? `${Math.round(minutesSinceSync / 60)}h ago` :
       `${minutesSinceSync} min ago`
 
-    const metrics: DashboardMetrics = {
-      sentimentScore: currentSentiment,
+    return NextResponse.json({
+      sentimentScore:    current.sentiment,
       sentimentChange,
-      feedbackVolume24h: currentVolume,
+      feedbackVolume24h: current.volume,
       volumeChange,
-      topTheme: themeRows[0]?.theme ?? "—",
-      themeCount: themeRows[0]?.cnt ?? 0,
+      topTheme:    themeRows[0]?.theme ?? "—",
+      themeCount:  themeRows[0]?.cnt ?? 0,
       pipelineStatus,
       lastProcessed,
-    }
-
-    return NextResponse.json(metrics)
+    } satisfies DashboardMetrics)
   } catch (err) {
     console.error("GET /api/metrics error:", err)
     return NextResponse.json({ error: "Failed to fetch metrics" }, { status: 500 })
